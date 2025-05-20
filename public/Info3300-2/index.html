@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Temperature Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        svg.map {
+            display: flex;
+            margin: auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .source-info {
+            position: absolute;
+            bottom: 4px; 
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            text-align: center; 
+        }
+        .slider {
+            width: 800px; 
+            position: absolute;
+            height: 10px; 
+            cursor: pointer;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            -webkit-appearance: none;
+            background: #cccbcb;
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.7;
+            -webkit-transition: 0.2s;
+            transition: opacity 0.2s;
+        } 
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none; 
+            appearance: none;
+            width: 18px; 
+            height: 18px; 
+            background: #415a8d;
+            cursor: pointer; 
+            border-radius: 50%; 
+            border: 2px solid #fff; 
+            box-shadow: 0 0 5px #000;
+        }
+        .slider::-moz-range-thumb {
+            width: 18px; 
+            height: 18px; 
+            background: #415a8d; 
+            cursor: pointer; 
+            border-radius: 50%; 
+            border: 2px solid #fff; 
+            box-shadow: 0 0 5px #000; 
+        }
+        .slider::-webkit-slider-thumb:hover {
+            background: #6790c1; 
+        }
+        .slider::-moz-range-thumb:hover {
+            background: #6790c1; 
+        }
+        .modal {
+            display: none; 
+            position: fixed; 
+            z-index: 1; 
+            left: 0;
+            top: 0;
+            width: 100%; 
+            height: 100%; 
+            overflow: auto; 
+            background-color: rgb(0,0,0); 
+            background-color: rgba(0,0,0,0.4);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto; 
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%; 
+        }
+
+        .close-button {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .close-button:hover,
+        .close-button:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        svg#legendSvg {
+            position: absolute;
+            right: -100px;
+            top: 50%;
+            transform: translateY(-50%); 
+        }
+        #dateDisplay {
+            text-align: center;
+            position: absolute; 
+            bottom: 40px; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            padding: 10px; 
+            font-size: 20px; 
+            color: black; 
+        }
+        .radio-button {
+            position: absolute;
+            left: 15px;
+            top: 50px;
+            border: 1px solid #ccc; 
+            padding: 8px; 
+            background-color: #f9f9f9; 
+        }
+        .radio-option {
+        display: flex; 
+        align-items: center; 
+        margin-bottom: 5px; 
+        }
+        #globalTempDisplay {
+            position: absolute;
+            left: 15px;
+            top: 130px;
+            border: 1px solid #ccc; 
+            padding: 8px; 
+            background-color: #f9f9f9; 
+        }
+
+        #globalChangeDisplay {
+            display: none;
+        }
+
+        #globalAvgDisplay {
+            display:none;
+        }
+
+    </style>
+</head>
+<body>
+    <h1 id="pageTitle">Monthly Average Temperature by Country</h1>
+    <svg class="map" id="map" width="1400" height="600"></svg>
+    <svg id="legendSvg" height="300"></svg>
+    <div id="dateDisplay"></div>
+    <div id="tooltip" style="display: none; position: absolute; background-color: white; padding: 4px; border: 1px solid black; border-radius: 4px; pointer-events: none;"></div>
+    <input type="range" min="0" max="304" value="0" class="slider" id="dateSlider">
+    <input type="range" min="0" max="100" value="0" class="slider" id="yearSlider" style="display: none;">
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">×</span>
+            <h2>Cities and Temperatures</h2>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+    <div class="radio-button">
+        <div class="radio-option">
+            <input type="radio" id="monthly" name="temperatureMode" value="monthly" checked>
+            <label for="monthly">Monthly Average Temperature</label>
+        </div>
+        <div class="radio-option">
+            <input type="radio" id="yearly" name="temperatureMode" value="yearly">
+            <label for="yearly">Yearly Average Temperature</label>
+        </div>
+    </div> 
+    <div id="globalTempDisplay">
+       <div>Global Average Temperature: <span id="globalTempValue">N/A</span></div>
+       <div id="globalChangeDisplay">Change from Last Year: <span id="globalChangeValue">N/A</span></div>
+       <div id="globalAvgDisplay">Deviation from Average Temperature <span id="globalAvgValue">N/A</span></div>
+    </div>
+    <div class="source-info"> Data source: <a href="https://www.kaggle.com/datasets/sudalairajkumar/daily-temperature-of-major-cities/" target="_blank">Temperature Dataset</a><br>
+        GeoJSON source: <a href="https://geojson-maps.ash.ms/" target="_blank">GeoJson Map</a></div>
+    <script>
+        const svgMap = d3.select("#map");
+        const widthMap = +svgMap.attr("width");
+        const heightMap = +svgMap.attr("height");
+        const slider = d3.select("#dateSlider");
+        const legendSvg = d3.select("#legendSvg");
+
+
+        const projection = d3.geoMercator()
+            .scale(150)
+            .translate([widthMap / 2, heightMap / 1.5]);
+        const path = d3.geoPath().projection(projection);
+        const colorScale = d3.scaleSequential(d3.interpolateRdYlBu);
+
+        let currentData = {};
+        let dateIndices = {};
+        let years = [];
+
+        Promise.all([
+            d3.json("custom.geo.json"), 
+            d3.csv("monthly_city_temperature.csv"),
+            d3.csv("yearly_city_temperature.csv") 
+        ]).then(([geoData, tempData, yearlyTempData]) => {
+            // Process temperature data
+            tempData.forEach((row, index) => {
+                const country = row.Country.toUpperCase();
+                const city = row.City;
+                const date = row.YearMonth;
+                if (!currentData[country]) {
+                    currentData[country] = {};
+                }
+                if (!currentData[country][city]) {
+                    currentData[country][city] = {};
+                }
+                currentData[country][city][date] = +row.MonthlyAvgTemp;
+                dateIndices[date] = index;
+            });
+
+            let yearlyData = {};
+            yearlyTempData.forEach(row => {
+                const year = row.Year;
+                const city = row.City;
+                const country = row.Country.toUpperCase();
+                if (!yearlyData[country]) {
+                    yearlyData[country] = {};
+                }
+                if (!yearlyData[country][city]) {
+                    yearlyData[country][city] = {};
+                }
+                yearlyData[country][city][year] = +row.YearlyAvgTemp;
+            });
+            
+            let allYears = new Set();
+            Object.values(yearlyData).forEach(country => {
+                Object.values(country).forEach(city => {
+                    Object.keys(city).forEach(year => {
+                        allYears.add(year);
+                    });
+                });
+            });
+
+            allTemps = [] //building array of all temperatures to get average temperature
+            tempData.forEach( (d) => {
+                allTemps.push(d.MonthlyAvgTemp)
+            });
+
+            tempSum = 0; //inspired by: https://stackoverflow.com/questions/29544371/finding-the-average-of-an-array-using-js
+            for(i=0; i < allTemps.length; i++) {
+                tempSum += Number(allTemps[i]);
+            };
+            const totalAvgTemp = (tempSum/allTemps.length);
+
+            years = Array.from(allYears).sort((a, b) => a - b);
+            const yearSlider = d3.select("#yearSlider");
+            yearSlider.attr("min", 0)
+                    .attr("max", years.length - 1)
+                    .attr("value", 0)
+                    .on("input", function() {
+                        updateMapWithYearlyData(years[this.value]);
+                        document.getElementById("dateDisplay").innerText = `Year: ${years[this.value]}`;
+                    });
+
+            function updateGlobalTemperature(date, mode) {
+                let sumTemp = 0, count = 0;
+                if (mode === "monthly") {
+                    for (const country in currentData) {
+                        for (const city in currentData[country]) {
+                            const temp = currentData[country][city][date];
+                            if (temp !== undefined) {
+                                sumTemp += temp;
+                                count++;
+                            }
+                        }
+                    };
+                
+                } else { // yearly mode
+                    for (const country in yearlyData) {
+                        for (const city in yearlyData[country]) {
+                            const temp = yearlyData[country][city][date];
+                            if (temp !== undefined) {
+                                sumTemp += temp;
+                                count++;
+                            }
+                        }
+                    }
+                };
+
+                const avgTemp = count > 0 ? (sumTemp / count).toFixed(2) : "N/A";
+                document.getElementById("globalTempValue").innerText = `${avgTemp}°F`;
+
+                //included additional dislpay options for yearly mode
+                if (mode === "yearly") {
+                    document.getElementById("globalChangeDisplay").style.display = "block";
+                    document.getElementById("globalAvgDisplay").style.display = "block";
+                };
+
+                if (mode === "monthly") {
+                    document.getElementById("globalChangeDisplay").style.display = "none";
+                    document.getElementById("globalAvgDisplay").style.display = "none";
+                };
+
+                //deviation from average temperature across all data points
+                const deviationTemp = (avgTemp - totalAvgTemp).toFixed(2);
+                if (deviationTemp < 0) {
+                    document.getElementById("globalAvgValue").innerText = `${Math.abs(deviationTemp)}°F colder`;
+                };
+
+                if (deviationTemp > 0) {
+                    document.getElementById("globalAvgValue").innerText = `${Math.abs(deviationTemp)}°F warmer`;
+                ;}
+
+                if (deviationTemp === 0) {
+                    document.getElementById("globalAvgValue").innerText = `${Math.abs(deviationTemp)}°F`;
+                };
+
+                //change from the previous year
+                let changeTemp = 0, changeCount = 0;
+
+                for (const changeCountry in yearlyData) {
+                        for (const changeCity in yearlyData[changeCountry]) {
+                            const secondTemp = yearlyData[changeCountry][changeCity][date-1];
+                            if (secondTemp !== undefined) {
+                                changeTemp += secondTemp;
+                                changeCount++;
+                            }
+                        }
+                    };
+
+                const lastYearTemp = count > 0 ? (changeTemp / changeCount).toFixed(2) : "N/A";
+                const changeAvgTemp = (avgTemp - lastYearTemp).toFixed(2);
+
+                if (changeAvgTemp < 0) {
+                    document.getElementById("globalChangeValue").innerText = `${Math.abs(changeAvgTemp)}°F colder`;
+                };
+
+                if (changeAvgTemp > 0) {
+                    document.getElementById("globalChangeValue").innerText = `${Math.abs(changeAvgTemp)}°F warmer`;
+                };
+
+                if (changeAvgTemp === 0) {
+                    document.getElementById("globalChangeValue").innerText = `${Math.abs(changeAvgTemp)}°F`;
+                };
+
+                if (date == Number(1995)) {
+                    document.getElementById("globalChangeValue").innerText = `N/A`;
+                };
+                
+              
+
+            };
+            const initialDate = Object.keys(dateIndices)[0];
+            updateGlobalTemperature(initialDate, 'monthly');
+
+
+            // Set up the color scale domain based on the temperature range
+            const temps = tempData.map(d => +d.MonthlyAvgTemp);
+            colorScale.domain(d3.extent(temps).reverse());
+
+            // Initial map drawing
+            svgMap.selectAll("path")
+                .data(geoData.features)
+                .join("path")
+                .attr("d", path)
+                .attr("fill", d => {
+                    const countryName = d.properties.name.toUpperCase();
+                    const countryData = currentData[countryName];
+                    if (countryData) {
+                        const firstCity = Object.keys(countryData)[0];
+                        const firstCityData = countryData[firstCity];
+                        const firstDate = Object.keys(firstCityData)[0];
+                        return colorScale(firstCityData[firstDate]);
+                    }
+                    return '#fff'; 
+                })
+                .attr("stroke", "#000")
+                .attr("stroke-width", 0.1)
+            
+                const legendHeight = 300; 
+                const legendWidth = 30;   
+                const legendX = widthMap - legendWidth - 20; 
+                const legendY = (heightMap - legendHeight) / 2;
+
+                // Define the linear gradient
+                const legendGradient = legendSvg.append("defs")
+                    .append("linearGradient")
+                    .attr("id", "legendGradient")
+                    .attr("x1", "0%")
+                    .attr("y1", "0%")
+                    .attr("x2", "0%")
+                    .attr("y2", "100%")
+                    .selectAll("stop")
+                    .data(colorScale.ticks().map((t, i, n) => ({ offset: `${100 * i / n.length}%`, color: colorScale(t) })))
+                    .enter().append("stop")
+                    .attr("offset", d => d.offset)
+                    .attr("stop-color", d => d.color);
+
+                // Append the rectangle to display the gradient
+                legendSvg.append("rect")
+                    .attr("x", 0)
+                    .attr("y", 0)
+                    .attr("width", legendWidth)
+                    .attr("height", legendHeight)
+                    .style("fill", "url(#legendGradient)");
+
+                // Define the scale and axis for the vertical legend
+                const legendScale = d3.scaleLinear()
+                    .domain(colorScale.domain().slice().reverse()) 
+                    .range([legendHeight, 0]);
+
+                const legendAxis = d3.axisRight(legendScale).ticks(5)
+                    .tickFormat(d => `${d}°F`);
+
+                legendSvg.append("g")
+                    .attr("transform", `translate(${legendWidth},0)`)
+                    .call(legendAxis);
+
+            function formatDate(dateString) {
+                const months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+                const parts = dateString.split('-');
+                const year = parts[0];
+                const monthIndex = parseInt(parts[1], 10) - 1;
+                return `${months[monthIndex]} ${year}`;
+            }
+
+            // Update slider attributes based on data
+            slider.attr("max", Object.keys(dateIndices).length - 1);
+
+            const startingDate = Object.keys(dateIndices)[0];
+            const formattedDate = formatDate(startingDate);
+            document.getElementById("dateDisplay").innerText = `Date: ${formattedDate}`;
+
+
+            const tooltip = d3.select("#tooltip");
+            // // Slider interaction
+            slider.on("input", function(event) {
+                updateMap(this.value);
+            })
+            .on("mousemove", function(event) {
+                updateTooltip(event, this);
+            })
+
+            d3.selectAll('input[name="temperatureMode"]').on('change', function() {
+                const mode = this.value;
+                if (mode === "yearly") {
+                    slider.style("display", "none");
+                    yearSlider.style("display", "block");
+                    updateMapWithYearlyData(years[yearSlider.property("value")]);
+                } else {
+                    yearSlider.style("display", "none");
+                    slider.style("display", "block");
+                    updateMap(slider.property("value"));
+                }
+            });
+
+            // Change the title and date display based on the radio button
+            document.getElementById('yearly').addEventListener('change', function() {
+                if (this.checked) {
+                    document.getElementById('pageTitle').innerText = 'Yearly Average Temperature by Country';
+                    const selectedYear = years[yearSlider.property("value")];
+                    document.getElementById("dateDisplay").innerText = `Year: ${selectedYear}`;
+                    updateMapWithYearlyData(selectedYear);
+                }
+            });
+
+            document.getElementById('monthly').addEventListener('change', function() {
+                if (this.checked) {
+                    document.getElementById('pageTitle').innerText = 'Monthly Average Temperature by Country';
+                    const startingDate = Object.keys(dateIndices)[0];
+                    const formattedDate = formatDate(startingDate); 
+                    document.getElementById("dateDisplay").innerText = `Date: ${formattedDate}`;
+                    updateMap(slider.property("value"));
+                }
+            });
+
+
+            function updateTooltip(event, sliderElement) {
+                const sliderValue = sliderElement.value;
+                const date = Object.keys(dateIndices)[sliderValue];
+
+                // Calculate the position of the tooltip based on the slider handle
+                const sliderRect = sliderElement.getBoundingClientRect();
+                const tooltipX = sliderRect.left + (sliderRect.width * (sliderValue / sliderElement.max)) - tooltip.node().offsetWidth / 2;
+                const tooltipY = sliderRect.top - 30; 
+
+                // Update tooltip position and text
+                tooltip.style("left", tooltipX + "px")
+                    .style("top", window.scrollY + tooltipY + "px") 
+                    .text(`Date: ${date}`);
+            }
+            
+            // Function to show the modal with city temperatures
+            function showModal(countryName, countryCities, date, mode) {
+                const modal = document.getElementById("modal");
+                const modalBody = document.getElementById("modal-body");
+                const closeButton = document.querySelector(".close-button");
+
+                // Clear previous content
+                modalBody.innerHTML = '';
+
+                for (const city in countryCities) {
+                    let temp;
+                    if (mode === "monthly") {
+                        // Access monthly temperature
+                        temp = countryCities[city][date] ? countryCities[city][date].toFixed(2) + "°F" : "N/A";
+                    } else {
+                        // Access yearly temperature
+                        if (yearlyData[countryName][city] && yearlyData[countryName][city][date]) {
+                            temp = yearlyData[countryName][city][date].toFixed(2) + "°F";
+                        } else {
+                            temp = "N/A";
+                        }
+                    }
+                    modalBody.innerHTML += `<p>${city}: ${temp}</p>`;
+                }
+                // Show the modal
+                modal.style.display = "block";
+                // Close the modal on button click
+                closeButton.onclick = function() {
+                    modal.style.display = "none";
+                };
+            }
+
+            let currentDateIndex = 0;
+
+            // Function to update the map based on the slider value
+            function updateMap(sliderValue) {
+                const date = Object.keys(dateIndices)[sliderValue];
+                const formattedDate = formatDate(date); // Use the new function to format the date
+                document.getElementById("dateDisplay").innerText = `Date: ${formattedDate}`;
+                updateGlobalTemperature(date, 'monthly');
+
+                svgMap.selectAll("path")
+                    .transition()
+                    .duration(200)
+                    .attr("fill", d => {
+                        const countryName = d.properties.name.toUpperCase();
+                        const countryData = currentData[countryName];
+                        if (countryData) {
+                            let sumTemp = 0;
+                            let cityCount = 0;
+                            // Calculate monthly average temperature
+                            for (const city in countryData) {
+                                if (countryData[city][date] !== undefined) {
+                                    sumTemp += countryData[city][date];
+                                    cityCount++;
+                                }
+                            }
+                            const avgTemp = cityCount > 0 ? sumTemp / cityCount : null;
+                            return avgTemp ? colorScale(avgTemp) : '#fff';
+                        }
+                        return '#fff'; // Default fill color if no data
+                    });
+            }
+
+            function updateMapWithYearlyData(selectedYear) {
+                updateGlobalTemperature(selectedYear, 'yearly');
+                svgMap.selectAll("path")
+                    .transition()
+                    .duration(200)
+                    .attr("fill", d => {
+                        const countryName = d.properties.name.toUpperCase();
+                        // Check if there's data for this country
+                        if (yearlyData[countryName]) {
+                            let sumTemp = 0;
+                            let cityCount = 0;
+                            // Sum temperatures for all cities in the country for the selected year
+                            for (const city in yearlyData[countryName]) {
+                                if (yearlyData[countryName][city][selectedYear] !== undefined) {
+                                    sumTemp += yearlyData[countryName][city][selectedYear];
+                                    cityCount++;
+                                }
+                            }
+                            // Calculate the average temperature if there are any cities with data
+                            if (cityCount > 0) {
+                                const avgTemp = sumTemp / cityCount;
+                                return colorScale(avgTemp);
+                            }
+                        }
+                        return '#fff'; // Default color if no data
+                    });
+            }
+
+            svgMap.selectAll("path")
+                .on("mouseover", function(event, d) {
+                    d3.select(this).transition().duration(100).attr("stroke-width", 0.6);
+                    d3.select(this).style("cursor", "pointer");
+
+                    const countryName = d.properties.name.toUpperCase();
+                    const mode = d3.select('input[name="temperatureMode"]:checked').node().value;
+
+                    let avgTemp;
+                    if (mode === "monthly") {
+                        const date = Object.keys(dateIndices)[slider.property("value")]; //used to be currentDateIndex
+                        const countryData = currentData[countryName];
+                        if (countryData) {
+                            let sumTemp = 0;
+                            let cityCount = 0;
+                            for (const city in countryData) {
+                                if (countryData[city][date] !== undefined) {
+                                    sumTemp += countryData[city][date];
+                                    cityCount++;
+                                }
+                            }
+                            avgTemp = cityCount > 0 ? (sumTemp / cityCount).toFixed(2) : "N/A";
+                        } else {
+                            avgTemp = "N/A";
+                        }
+                    } else { // Yearly mode
+                        const selectedYear = years[yearSlider.property("value")];
+                        if (yearlyData[countryName]) {
+                            let sumTemp = 0;
+                            let cityCount = 0;
+                            for (const city in yearlyData[countryName]) {
+                                if (yearlyData[countryName][city][selectedYear] !== undefined) {
+                                    sumTemp += yearlyData[countryName][city][selectedYear];
+                                    cityCount++;
+                                }
+                            }
+                            avgTemp = cityCount > 0 ? (sumTemp / cityCount).toFixed(2) : "N/A";
+                        } else {
+                            avgTemp = "N/A";
+                        }
+                    }
+                    
+                    tooltip.style("display", "block")
+                        .html(`${countryName}: ${avgTemp}°F<br>Click for more details`)
+                        .style("left", (event.pageX + 10) + "px") 
+                        .style("top", (event.pageY + 10) + "px");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).transition().duration(100).attr("stroke-width", 0.1);
+                    tooltip.style("display", "none");
+                })
+                .on("click", function(event, d) {
+                    const countryName = d.properties.name.toUpperCase();
+                    const mode = d3.select('input[name="temperatureMode"]:checked').node().value;
+                    const countryCities = currentData[countryName];
+
+                    let date;
+                    if (mode === "monthly") {
+                        date = Object.keys(dateIndices)[slider.property("value")]; //used to be currentDateIndex
+                    } else {
+                        date = years[yearSlider.property("value")];
+                    }
+
+                    if (countryCities) {
+                        showModal(countryName, countryCities, date, mode);
+                    }
+                });
+            window.onclick = function(event) {
+                const modal = document.getElementById("modal");
+                if (event.target == modal) {
+                    modal.style.display = "none";
+                }
+            };
+        });
+    </script>
+</body>
+</html>
+

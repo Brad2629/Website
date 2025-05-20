@@ -1,0 +1,34 @@
+# dependencies
+/node_modules/
+
+# Next.js build output
+/.next/
+/out/
+
+# Local env files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel portfolio (if present)
+/.vercel/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Optional static assets you don’t want in Git
+/node_modules/@next/swc-darwin-arm64/next-swc.darwin-arm64.node
+
+# Mac zip artifacts
+*.zipnode_modules/
+.next/
+public/Rapid-pro/Video.MOV
