@@ -1,5 +1,5 @@
 // pages/_app.js
-import '@/styles/globals.css';
+import '../styles/globals.css';
 import Meta from '../components/Meta';
 import { useRouter } from 'next/router';
 import Script from 'next/script';
