@@ -60,7 +60,7 @@ export default function Home() {
               <p className="text-lg mt-2 text-gray-700">
                 Former professional & college tennis player | Finance & Data Enthusiast
               </p>
-              <a href="/Resume.pdf" className="btn-primary underline hover:no-underline">
+              <a href="/Resume.pdf" target="_blank"rel="noopener noreferrer" className="btn-primary underline hover:no-underline">
                 View Resume
               </a>
               <p className="mt-2 text-sm text-gray-600">
